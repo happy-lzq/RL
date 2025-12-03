@@ -355,76 +355,18 @@ def plot_metrics(rewards, losses, success_rates, filename="training_metrics.png"
     plt.savefig(filename)
     print(f"训练图表已保存至: {filename}")
 
+import matplotlib.image as mpimg
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+
+# ...existing code...
+
 def create_demo_gif(env, agent1, agent2, device, filename="demo.gif"):
-    """生成演示 GIF"""
+    """生成演示 GIF (图片素材版 - 完美解决乱码)"""
     print("正在生成演示 GIF...")
     state = env.reset()
-    frames = []
     
-    fig, ax = plt.subplots(figsize=(5, 5))
-    
-    def update(frame_idx):
-        ax.clear()
-        ax.set_xlim(-0.5, GRID_SIZE-0.5)
-        ax.set_ylim(GRID_SIZE-0.5, -0.5) # 翻转Y轴，(0,0)在左上角
-        ax.set_xticks(np.arange(GRID_SIZE))
-        ax.set_yticks(np.arange(GRID_SIZE))
-        ax.grid(True)
-        
-        # 绘制静态设施
-        # Onion (0,0)
-        ax.add_patch(patches.Circle((0, 0), 0.3, color='gold', label='Onion'))
-        ax.text(0, 0, "Onion", ha='center', va='center', fontsize=8)
-        
-        # Pot (0, 4)
-        color = 'black'
-        if env.pot_status == POT_COOKING: color = 'orange'
-        if env.pot_status == POT_READY: color = 'red'
-        ax.add_patch(patches.Rectangle((GRID_SIZE-1 - 0.4, 0 - 0.4), 0.8, 0.8, color=color))
-        ax.text(GRID_SIZE-1, 0, "Pot", ha='center', va='center', color='white', fontsize=8)
-        
-        # Dish (4, 0)
-        ax.add_patch(patches.Circle((0, GRID_SIZE-1), 0.3, color='white', ec='black'))
-        ax.text(0, GRID_SIZE-1, "Dish", ha='center', va='center', fontsize=8)
-        
-        # Serve (4, 4)
-        ax.add_patch(patches.Rectangle((GRID_SIZE-1 - 0.4, GRID_SIZE-1 - 0.4), 0.8, 0.8, color='purple', alpha=0.5))
-        ax.text(GRID_SIZE-1, GRID_SIZE-1, "Serve", ha='center', va='center', fontsize=8)
-        
-        # 绘制智能体
-        colors = ['blue', 'green']
-        for i, agent in enumerate(env.agents):
-            ax.add_patch(patches.Circle((agent['y'], agent['x']), 0.25, color=colors[i], alpha=0.8))
-            
-            # 绘制持有物品
-            hold_text = ""
-            if agent['holding'] == ITEM_ONION: hold_text = "Onion"
-            elif agent['holding'] == ITEM_DISH: hold_text = "Dish"
-            elif agent['holding'] == ITEM_SOUP: hold_text = "Soup"
-            
-            if hold_text:
-                ax.text(agent['y'], agent['x']-0.3, hold_text, ha='center', fontsize=7, color='black', weight='bold')
-            
-            ax.text(agent['y'], agent['x'], f"A{i+1}", ha='center', va='center', color='white', weight='bold')
-
-        # 运行一步
-        if frame_idx > 0: # 第0帧是初始状态
-            with torch.no_grad():
-                s_t = torch.FloatTensor(state).unsqueeze(0).to(device)
-                a1 = agent1.select_action(state, eval_mode=True).item()
-                a2 = agent2.select_action(state, eval_mode=True).item()
-            
-            next_state, _, done, _ = env.step([a1, a2])
-            # 更新外部 state 变量需要 trick，这里简化处理，直接修改 env 状态
-            # 注意：FuncAnimation 的 update 函数通常不应该有副作用修改外部流，但这里为了简单模拟 step
-            # 更好的方式是预先收集所有 frames 数据
-            
-        ax.set_title(f"Step: {frame_idx}")
-
-    # 预先运行并收集状态数据，而不是在绘图中运行
+    # 预先运行并收集状态数据
     states_data = []
-    # 重新 reset 确保从头开始
-    state = env.reset()
     states_data.append(copy_env_state(env))
     
     for _ in range(MAX_STEPS):
@@ -436,70 +378,84 @@ def create_demo_gif(env, agent1, agent2, device, filename="demo.gif"):
         state, _, done, _ = env.step([a1, a2])
         states_data.append(copy_env_state(env))
         if done: break
-        
-    # 真正的动画生成函数
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+    
+    # 加载图片素材
+    try:
+        img_onion = mpimg.imread('assets/onion.png')
+        img_pot_empty = mpimg.imread('assets/pot_empty.png')
+        img_pot_cooking = mpimg.imread('assets/pot_cooking.png')
+        img_pot_ready = mpimg.imread('assets/pot_ready.png')
+        img_dish = mpimg.imread('assets/dish.png')
+        img_serve = mpimg.imread('assets/serve.png')
+        img_chef_man = mpimg.imread('assets/chef_man.png')
+        img_chef_woman = mpimg.imread('assets/chef_woman.png')
+    except FileNotFoundError:
+        print("错误：未找到图片素材，请确保 assets 文件夹存在且包含所需图片。")
+        return
+
+    def add_image(ax, img, x, y, zoom=0.6):
+        im = OffsetImage(img, zoom=zoom)
+        ab = AnnotationBbox(im, (x, y), frameon=False)
+        ax.add_artist(ab)
+
     def animate(i):
         ax.clear()
-        # 恢复环境状态用于绘图
         restore_env_state(env, states_data[i])
         
+        # 设置坐标轴
         ax.set_xlim(-0.5, GRID_SIZE-0.5)
         ax.set_ylim(GRID_SIZE-0.5, -0.5)
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.grid(True, alpha=0.3)
+        ax.set_xticks(np.arange(GRID_SIZE))
+        ax.set_yticks(np.arange(GRID_SIZE))
+        ax.grid(True, color='#cccccc', linestyle='--', alpha=0.3)
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
         
         # 绘制背景
-        ax.add_patch(patches.Rectangle((-0.5, -0.5), GRID_SIZE, GRID_SIZE, color='#f0f0f0'))
+        ax.add_patch(patches.Rectangle((-0.5, -0.5), GRID_SIZE, GRID_SIZE, color='#f9f9f9'))
         
-        # 绘制设施
-        # Onion (0,0)
-        ax.add_patch(patches.Circle((0, 0), 0.35, color='#FFD700', label='Onion')) # Gold
-        ax.text(0, 0, "Onion", ha='center', va='center', fontsize=8)
+        # --- 绘制静态设施 (图片) ---
         
-        # Pot (0, 4) - (row, col) -> (y, x) in plot? No, (x, y) in plot is (col, row)
-        # Grid is grid[row][col]. Agent x=row, y=col.
-        # Plot (x, y) usually means (col, row).
-        # So Agent(x,y) -> Plot(y, x)
+        # 1. Onion (0,0)
+        add_image(ax, img_onion, 0, 0, zoom=0.7)
         
-        # Pot at (0, GRID_SIZE-1) -> Row 0, Col 4 -> Plot(4, 0)
-        pot_color = '#333333'
-        if env.pot_status == POT_COOKING: pot_color = '#FF8C00' # DarkOrange
-        if env.pot_status == POT_READY: pot_color = '#FF4500' # OrangeRed
+        # 2. Pot (0, 4) -> Plot(4, 0)
+        pot_img = img_pot_empty
+        if env.pot_status == POT_COOKING: pot_img = img_pot_cooking
+        if env.pot_status == POT_READY: pot_img = img_pot_ready
+        add_image(ax, pot_img, GRID_SIZE-1, 0, zoom=0.7)
         
-        # Pot pos: Row 0, Col 4. Plot x=4, y=0.
-        ax.add_patch(patches.Rectangle((GRID_SIZE-1 - 0.4, 0 - 0.4), 0.8, 0.8, color=pot_color))
-        ax.text(GRID_SIZE-1, 0, "Pot", ha='center', va='center', color='white', fontsize=8)
+        # 3. Dish (4, 0) -> Plot(0, 4)
+        add_image(ax, img_dish, 0, GRID_SIZE-1, zoom=0.7)
         
-        # Dish at (GRID_SIZE-1, 0) -> Row 4, Col 0 -> Plot(0, 4)
-        ax.add_patch(patches.Circle((0, GRID_SIZE-1), 0.35, color='white', ec='#333333', lw=2))
-        ax.text(0, GRID_SIZE-1, "Dish", ha='center', va='center', fontsize=8)
-        
-        # Serve at (GRID_SIZE-1, GRID_SIZE-1) -> Row 4, Col 4 -> Plot(4, 4)
-        ax.add_patch(patches.Rectangle((GRID_SIZE-1 - 0.4, GRID_SIZE-1 - 0.4), 0.8, 0.8, color='#9370DB')) # MediumPurple
-        ax.text(GRID_SIZE-1, GRID_SIZE-1, "Serve", ha='center', va='center', color='white', fontsize=8)
-        
-        # 绘制智能体
-        colors = ['#4169E1', '#32CD32'] # RoyalBlue, LimeGreen
+        # 4. Serve (4, 4) -> Plot(4, 4)
+        add_image(ax, img_serve, GRID_SIZE-1, GRID_SIZE-1, zoom=0.7)
+
+        # --- 绘制智能体 ---
         for idx, agent in enumerate(env.agents):
-            # Agent x=row, y=col -> Plot(col, row)
-            ax.add_patch(patches.Circle((agent['y'], agent['x']), 0.3, color=colors[idx], alpha=0.9, ec='white', lw=1))
-            ax.text(agent['y'], agent['x'], f"A{idx+1}", ha='center', va='center', color='white', weight='bold', fontsize=9)
+            # Agent Image
+            chef_img = img_chef_man if idx == 0 else img_chef_woman
+            add_image(ax, chef_img, agent['y'], agent['x'], zoom=0.8)
             
-            # 持有物品
+            # 编号
+            ax.text(agent['y']-0.3, agent['x']-0.3, f"A{idx+1}", ha='center', va='center', fontsize=8, weight='bold', color='#333')
+            
+            # 持有物品 (在右下角显示小图标)
             if agent['holding'] != ITEM_NONE:
-                item_color = 'white'
-                if agent['holding'] == ITEM_ONION: item_color = '#FFD700'
-                elif agent['holding'] == ITEM_DISH: item_color = 'white'
-                elif agent['holding'] == ITEM_SOUP: item_color = '#FF4500'
+                item_img = None
+                if agent['holding'] == ITEM_ONION: item_img = img_onion
+                elif agent['holding'] == ITEM_DISH: item_img = img_dish
+                elif agent['holding'] == ITEM_SOUP: item_img = img_pot_ready # 用汤的图代替
                 
-                # 画一个小圆圈在智能体右下角
-                ax.add_patch(patches.Circle((agent['y']+0.2, agent['x']+0.2), 0.15, color=item_color, ec='black', lw=1))
+                if item_img is not None:
+                    add_image(ax, item_img, agent['y']+0.25, agent['x']+0.25, zoom=0.35)
 
         ax.set_title(f"Step: {i} | Pot: {['Empty','Cooking','Ready'][env.pot_status]}", fontsize=12)
         return []
 
-    anim = FuncAnimation(fig, animate, frames=len(states_data), interval=500)
+    anim = FuncAnimation(fig, animate, frames=len(states_data), interval=600)
     anim.save(filename, writer='pillow')
     print(f"演示 GIF 已保存至: {filename}")
     plt.close()
